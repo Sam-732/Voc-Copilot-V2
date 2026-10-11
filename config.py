@@ -142,3 +142,16 @@ THRESHOLD_LABELS_FILE = "labels/threshold_labels.csv"
 PURITY_LABEL_SOURCES = [
     {"file": "labeling cluster 31.txt", "cluster": 31, "yes_theme": "delivery_late"},
 ]
+
+# ---------- in-app labelling (app.py /label, phase 4 step 5) - writes labels/threshold_labels.csv only ----------
+# Failure types offered when labelling, taken from the ones used in the first 10 labels (labels/NOTES.md).
+LABEL_FAILURE_TYPES = [
+    "none (positive example: confident and correct)",
+    "near-tie between two wrong clusters; no right cluster exists",
+    "confidently wrong: correct cluster exists but ranked 2nd by a wide margin",
+    "correct cluster exists but ranked second (small gap)",
+    "multi-issue review: assignment picked the secondary issue",
+    "right answer, wrong reason: placed by language, not content",
+    "other (describe in the reason)",
+]
+LABEL_REASON_MAX_CHARS = 1000    # longest reason accepted

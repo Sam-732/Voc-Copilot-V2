@@ -27,6 +27,7 @@ from datetime import datetime
 
 import actions
 import config as C
+import labelstore
 import space as S
 import taxonomy
 
@@ -117,43 +118,8 @@ def cmd_flags(con, args):
         show(cur.fetchall(), [d[0] for d in cur.description])
 
 
-LABEL_FIELDS = ["log_id", "pool", "stars", "text", "cluster", "cluster_display_id", "cluster_name",
-                "distance", "second_cluster", "second_display_id", "second_name", "second_distance",
-                "verdict", "reason"]
-
-
-def already_labelled():
-    path = os.path.join(C.LABELS_DIR, "threshold_labels.csv")
-    if not os.path.exists(path):
-        return set()
-    with open(path, encoding="utf-8-sig") as f:
-        return {int(r["log_id"]) for r in csv.DictReader(f)}
-
-
-def pick_labelset(con, args, where, params):
-    """Weakest: evenly spaced across the top quantile of distance. Ambiguous: smallest gaps.
-    Skips anything already in labels/threshold_labels.csv. Shuffled."""
-    import random
-    import numpy as np
-    skip = already_labelled()
-    rows = [r for r in con.execute(f"""SELECT l.log_id, l.distance, l.gap FROM assignment_log l
-                                       WHERE {where} AND l.outcome = 'assigned'""", params)
-            if r[0] not in skip]
-    if not rows:
-        return []
-    cut = np.percentile([r[1] for r in rows], C.LABELSET_WEAK_PERCENTILE)
-    top = sorted((r for r in rows if r[1] >= cut), key=lambda r: r[1])
-    k = min(args.weakest, len(top))
-    weak = [top[int(i)] for i in np.linspace(0, len(top) - 1, k)] if k else []
-    taken = {r[0] for r in weak}
-    amb = [r for r in sorted(rows, key=lambda r: r[2]) if r[0] not in taken][:args.ambiguous]
-    picks = [(r[0], "weakest") for r in weak] + [(r[0], "ambiguous") for r in amb]
-    random.Random(args.seed).shuffle(picks)
-    return picks
-
-
 def cmd_labelset(con, args):
-    import json
+    """Pick (or take --log-ids) and write a batch CSV, via labelstore - same as the app's "New batch"."""
     if args.log_ids:
         pools = {}
         session = os.path.join(C.LABELS_DIR, "_session.json")
@@ -162,31 +128,13 @@ def cmd_labelset(con, args):
         picks = [(int(i), pools.get(int(i), "manual")) for i in args.log_ids.split(",")]
     else:
         where, params, _ = scope(con, args)
-        picks = pick_labelset(con, args, where, params)
+        picks = labelstore.pick(con, where, params, args.weakest, args.ambiguous, args.seed)
     if not picks:
         sys.exit("nothing to export")
-    wn_path = os.path.join(C.LABELS_DIR, "working_names.json")
-    working = json.load(open(wn_path, encoding="utf-8"))["names"] if os.path.exists(wn_path) else {}
-    def name(cluster, label):
-        if str(cluster) in working and "unnamed" in (label or ""):
-            return f"UNNAMED - working name: {working[str(cluster)]}"
-        return label
-    out = args.out or os.path.join(C.LABELS_DIR, f"batch_{datetime.now():%Y%m%d_%H%M%S}.csv")
-    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
-    with open(out, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.writer(f)
-        w.writerow(LABEL_FIELDS)
-        for lid, pool in picks:
-            r = con.execute("""SELECT c.score, c.text, l.cluster, l.cluster_label, ROUND(l.distance, 4),
-                               l.second_cluster, l.second_label, ROUND(l.second_distance, 4)
-                               FROM assignment_log l JOIN reviews_clean c USING (review_id)
-                               WHERE l.log_id = ?""", (lid,)).fetchone()
-            if not r:
-                sys.exit(f"no log row {lid}")
-            score, text, c1, l1, d1, c2, l2, d2 = r
-            _, tx = taxonomy.load([c1, c2])
-            w.writerow([lid, pool, score, text, c1, tx[c1]["id"], name(c1, l1), d1,
-                        c2, tx[c2]["id"], name(c2, l2), d2, "", ""])
+    try:
+        out = labelstore.write_batch(con, picks, args.out)
+    except labelstore.LabelError as e:
+        sys.exit(str(e))
     print(f"wrote {len(picks)} reviews to label: {out}")
     print(f"fill in verdict (right/wrong) and reason, then: python labels/record_label.py --from-csv {out}")
 

@@ -19,6 +19,10 @@ Step 4 - the first write:
     POST /review/<id>/flag     save a flag (assignment_flags) - via actions.py, same as the command line
     POST /review/<id>/unflag   remove it
     /flags                every flag, with remove buttons
+Step 5 - labelling (writes labels/threshold_labels.csv only, never reviews.db):
+    /label                the current batch of borderline placements, one form per review
+    POST /label/new       pick and save a new batch (labels/batch_<date>.csv), via labelstore
+    POST /label/<log_id>  save one verdict to threshold_labels.csv, via labelstore
 Writes go through write_con(): one at a time, only from this app's own pages, and paused while a
 daily run is in progress.
 """
@@ -28,10 +32,14 @@ import threading
 from flask import Flask, abort, redirect, render_template, render_template_string, request, url_for
 from markupsafe import Markup, escape
 
+import csv
+import os
+
 import actions
 import charts
 import config as C
 import dashboard_v2
+import labelstore
 import queries
 
 app = Flask(__name__)
@@ -74,6 +82,13 @@ MESSAGES = {
     "busy": ("A daily run is writing to the database right now. Nothing was saved - try again in a minute.", True),
     "invalid": ("Nothing was saved: that choice isn't valid for this review.", True),
     "stale": ("Nothing was saved: this review was placed again since the page loaded. Here is its current decision.", True),
+    "labelled": ("Label saved to labels/threshold_labels.csv.", False),
+    "already": ("That review was already labelled; nothing was added.", True),
+    "labelmissing": ("Nothing was saved: choose right or wrong, a failure type, and write a reason.", True),
+    "notinbatch": ("Nothing was saved: that review isn't in the current batch.", True),
+    "newbatch": ("New batch started.", False),
+    "nothingleft": ("No unlabelled borderline placements left in the current runs.", True),
+    "batchopen": ("Finish the current batch before starting a new one.", True),
 }
 
 
@@ -246,6 +261,85 @@ def flags():
     return render_template("flags.html", active="/flags", title="Flags",
                            intro="Placements you've marked wrong.", rows=with_con(queries.flags),
                            live=bool(with_con(queries.run_status)["live"]), **message())
+
+
+def _saved_labels():
+    """log id -> (verdict, failure type), from threshold_labels.csv."""
+    path = labelstore._path(C.THRESHOLD_LABELS_FILE)
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8-sig") as f:
+        return {int(r["log_id"]): (r["verdict"], r["failure_type"]) for r in csv.DictReader(f)}
+
+
+@app.get("/label")
+def label():
+    """The current batch: one form per unlabelled review, then the ones already done."""
+    path, rows = labelstore.current_batch()
+    saved = _saved_labels()
+    if rows:
+        con = read_con()
+        try:
+            reset = con.execute("SELECT COALESCE(MAX(run_id), 0) FROM assign_runs WHERE status='reset'").fetchone()[0]
+            for r in rows:
+                hit = con.execute("SELECT review_id, run_id FROM assignment_log WHERE log_id = ?",
+                                  (int(r["log_id"]),)).fetchone()
+                r["review_id"], r["superseded"] = (hit[0], hit[1] < reset) if hit else (None, False)
+                r["saved_verdict"], r["saved_type"] = saved.get(int(r["log_id"]), ("", ""))
+        finally:
+            con.close()
+    return render_template("label.html", active="/label", title="Label",
+                           intro="Judge borderline placements. Your verdicts set and check the threshold.",
+                           path=path, path_name=os.path.basename(path) if path else None, rows=rows,
+                           done_n=sum(r["done"] for r in rows), total_labelled=len(saved),
+                           batch_n=C.LABELSET_WEAKEST_N + C.LABELSET_AMBIGUOUS_N,
+                           failure_types=C.LABEL_FAILURE_TYPES, reason_max=C.LABEL_REASON_MAX_CHARS, **message())
+
+
+@app.post("/label/new")
+def label_new():
+    """Pick a new batch from the current runs and save it as labels/batch_<date>.csv."""
+    if not from_this_app():
+        abort(403)
+    with WRITE_LOCK:
+        if labelstore.current_batch()[0]:
+            return redirect(url_for("label", msg="batchopen"))
+        con = read_con()
+        try:
+            reset = con.execute("SELECT COALESCE(MAX(run_id), 0) FROM assign_runs WHERE status='reset'").fetchone()[0]
+            picks = labelstore.pick(con, "l.run_id > ?", (reset,), C.LABELSET_WEAKEST_N,
+                                    C.LABELSET_AMBIGUOUS_N, C.LABELSET_SEED)
+            if not picks:
+                return redirect(url_for("label", msg="nothingleft"))
+            labelstore.write_batch(con, picks)
+        finally:
+            con.close()
+    return redirect(url_for("label", msg="newbatch"))
+
+
+@app.post("/label/<int:log_id>")
+def label_save(log_id):
+    """Save one verdict from the current batch to threshold_labels.csv."""
+    if not from_this_app():
+        abort(403)
+    verdict = request.form.get("verdict", "")
+    failure_type = request.form.get("failure_type", "")
+    reason = (request.form.get("reason") or "").strip()[:C.LABEL_REASON_MAX_CHARS]
+    if verdict not in ("right", "wrong") or failure_type not in C.LABEL_FAILURE_TYPES or not reason:
+        return redirect(url_for("label", msg="labelmissing") + f"#l{log_id}")
+    with WRITE_LOCK:
+        path, rows = labelstore.current_batch()
+        row = next((r for r in rows if int(r["log_id"]) == log_id), None)
+        if row is None:
+            return redirect(url_for("label", msg="notinbatch"))
+        con = read_con()
+        try:
+            ok = labelstore.record(con, log_id, verdict, reason, failure_type, row["pool"])
+        except labelstore.LabelError:
+            return redirect(url_for("label", msg="notinbatch"))
+        finally:
+            con.close()
+    return redirect(url_for("label", msg="labelled" if ok else "already"))
 
 
 if __name__ == "__main__":

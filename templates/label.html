@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_macros.html" import stars %}
+{% block body %}
+{% if msg %}<div class="caveat" role="status" style="border-left-color:{{ 'var(--flag)' if msg_bad else 'var(--accent)' }}">{{ msg }}</div>{% endif %}
+<p class="h2note">Labels are saved to <code>labels/threshold_labels.csv</code> only (the file is the record, kept in git).
+The same batches can be filled in by hand and imported with <code>python labels/record_label.py --from-csv</code>.
+Each card shows the placement as it was decided; judge whether the review belongs where it was placed.</p>
+
+{% if not path %}
+  <div class="card"><b>No batch in progress.</b> {{ total_labelled }} labels recorded so far.
+  <form method="post" action="/label/new" style="margin-top:10px">
+    <button class="more" type="submit">Start a new batch of {{ batch_n }}</button>
+    <span class="rmeta" style="margin-left:8px">Borderline placements from the current runs, shuffled, skipping any already labelled.</span>
+  </form></div>
+{% else %}
+  <p class="hits">Batch <code>{{ path_name }}</code>: {{ done_n }} of {{ rows|length }} labelled.</p>
+  {% for r in rows if not r.done %}
+  <form method="post" action="/label/{{ r.log_id }}" class="card" id="l{{ r.log_id }}">
+    <div class="rmeta">{{ stars(r.stars|int) }}{% if r.superseded %}<span class="pill warn">from a run that was later redone</span>{% endif %}
+      {% if r.review_id %}<a href="/review/{{ r.review_id }}" style="color:var(--accent)">review details</a>{% endif %}</div>
+    <p style="margin:4px 0 10px">{{ r.text }}</p>
+    <table class="grid" style="margin-bottom:10px"><tbody>
+      <tr><td class="name">Placed in</td><td><b>{{ r.cluster_display_id }} · {{ r.cluster_name }}</b> — distance {{ r.distance }}</td></tr>
+      <tr><td class="name">Second nearest</td><td>{{ r.second_display_id }} · {{ r.second_name }} — distance {{ r.second_distance }}</td></tr>
+    </tbody></table>
+    <fieldset style="border:0;padding:0;margin:0 0 8px"><legend class="rmeta">Is this placement right?</legend>
+      <label style="margin-right:14px"><input type="radio" name="verdict" value="right" required> right</label>
+      <label><input type="radio" name="verdict" value="wrong"> wrong</label></fieldset>
+    <label style="display:block;font-size:13px;color:var(--muted)">Failure type
+      <select name="failure_type" required style="display:block;width:100%;margin-top:4px;padding:7px;font:inherit;font-size:13px;background:var(--surface);color:var(--ink);border:1px solid var(--rule);border-radius:3px">
+        <option value="" selected disabled>choose one</option>
+        {% for f in failure_types %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
+      </select></label>
+    <label style="display:block;font-size:13px;color:var(--muted);margin-top:10px">Reason (required)
+      <textarea name="reason" required maxlength="{{ reason_max }}" rows="2" style="display:block;width:100%;margin-top:4px;padding:7px;font:inherit;font-size:13px;background:var(--surface);color:var(--ink);border:1px solid var(--rule);border-radius:3px"></textarea></label>
+    <button class="more" type="submit" style="margin-top:10px">Save label</button>
+  </form>
+  {% endfor %}
+  {% if done_n %}<h2>Already labelled in this batch</h2>
+  {% for r in rows if r.done %}<div class="rev"><div class="rmeta"><span>{{ r.saved_verdict }}</span><span>{{ r.saved_type }}</span></div>{{ r.text[:160] }}{% if r.text|length > 160 %}…{% endif %}</div>{% endfor %}{% endif %}
+{% endif %}
+{% endblock %}
