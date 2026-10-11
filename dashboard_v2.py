@@ -346,6 +346,7 @@ document.getElementById('caveat').innerHTML = `<b>How far to trust this.</b>
 The ${D.run.threshold} cut-off was set from just 10 hand-checked borderline placements; 6 of them were wrong,
 mostly reviews whose real complaint has no cluster at all.</li>
 <li>Each review counts once, under its nearest cluster; a review with two complaints can land under the secondary one.</li>
+<li>Delivery, Refunds, Food quality and AI chatbot are undercounted: about half the new reviews nearest them sit too far from any cluster and go to the unassigned bucket, because one ${D.run.threshold} cut-off is used for every cluster.</li>
 <li>Roughly 2% of placed complaints land in Positive and never reach the complaint ranking.</li>
 <li>Bars before ${W.v2start} are v1 cluster membership; after it, daily placement. The two methods differ, so a step at that date is not a trend.</li>
 </ul>`;

@@ -201,7 +201,7 @@ threshold_labels.csv (columns failure_type and reasoning, all 10 filled) and sum
 
 ### 3. Threshold status
 Decision (Samprat): keep 0.58 for now. Provisional - based on 20 labels (10 threshold, 10
-cluster 31 purity).
+cluster 31 purity). [11 Oct: superseded by item 5 - 0.58 for all clusters is now the decision.]
 Counter-argument (Samprat): bucketed reviews concentrate in the wide delivery clusters, so
 delivery themes are systematically undercounted in the ranking unless the dashboard shows the
 bucket size next to them.
@@ -223,12 +223,20 @@ The direct test is a purity sample of sub-themes 2 and 3 themselves, or the next
 round below. purity_cluster30.csv tests whether cluster 30 is one coherent complaint; cluster
 30's nearest themes are Food quality (1.08) and Refunds (1.13), not delivery.
 
-### 5. Next labelling round
-About 20 reviews at distance 0.58-0.91 from delivery sub-themes 2 and 3 (the only band the
-delivery exception would change).
-Decision rule, written before labelling: "If at least ___ of 20 clearly belong, I adopt the
-exception."
-Fill in the reason column for every label.
+### 5. Threshold decision (Samprat, 11 Oct 2026)
+**One global threshold of 0.58 for all clusters. No per-cluster thresholds, no delivery exception.**
+This replaces the planned 20-review delivery labelling round and its decision rule
+("if at least 17 of 20 clearly belong, adopt the delivery exception"); that round (step 5b) was
+dropped before any batch was created.
+Reason: a single rule is simpler to explain, test and maintain, and the what-if data shows Food
+quality and Refunds lose a similar share to the bucket as Delivery, so a delivery-only exception
+would be a partial patch.
+Known cost, accepted: roughly half the reviews nearest Delivery, Food quality and Refunds go to
+the bucket, so those themes are undercounted in the ranking. Measured 11 Oct over all 3,267
+placement decisions since v1 (What if method: nearest of the 30 v1 clusters, at 0.58):
+Delivery 53% (354 of 672), Refunds 55% (130 of 236), Food quality 56% (98 of 174) - and AI chatbot
+61% (49 of 80), the highest share, though a smaller theme. Overall 31%. The dashboard's "How far
+to trust this" box says this.
 
 ### 6. What "depending on run timing" means
 The bucket is re-clustered only on what's left in it, and each cluster found removes its
