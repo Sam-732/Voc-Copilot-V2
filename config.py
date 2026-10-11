@@ -128,6 +128,7 @@ CARD_NEAREST_N = 3               # nearest other clusters listed on a card
 APP_HOST = "127.0.0.1"           # localhost only - the app is never reachable from other machines
 APP_PORT = 5000
 DB_BUSY_TIMEOUT_S = 5            # how long a request waits if the daily job is mid-write
+FLAG_NOTE_MAX_CHARS = 500        # longest note accepted on a flag
 SEARCH_MIN_CHARS = 2             # shorter search terms are ignored
 SEARCH_MAX_RESULTS = 200         # most results shown for one search
 BUCKET_TYPICAL_N = 5             # typical reviews shown per bucket-found cluster in the bucket browser

@@ -75,10 +75,10 @@ def bucket(con, sort="distance"):
     themes, clusters = _taxonomy(con)
     tname = {k: t["name"] for k, t in themes.items()}
     order = {"distance": "a.nearest_distance DESC", "date": "r.at DESC", "helpful": "r.thumbs_up DESC"}[sort]
-    unassigned = [{"nearest": clusters[c]["id"], "nearest_theme": tname[clusters[c]["theme"]],
+    unassigned = [{"id": rid, "nearest": clusters[c]["id"], "nearest_theme": tname[clusters[c]["theme"]],
                    "distance": d, "stars": s, "date": at[:10], "helpful": u or 0, "text": t}
-                  for c, d, s, at, u, t in con.execute(f"""
-                      SELECT a.nearest_cluster, a.nearest_distance, r.score, r.at, r.thumbs_up, r.content
+                  for rid, c, d, s, at, u, t in con.execute(f"""
+                      SELECT a.review_id, a.nearest_cluster, a.nearest_distance, r.score, r.at, r.thumbs_up, r.content
                       FROM assignments a JOIN reviews_raw r USING (review_id)
                       WHERE a.status = 'unassigned' ORDER BY {order}""")]
 
@@ -119,8 +119,8 @@ def search(con, q):
     where = "FROM reviews_raw r LEFT JOIN assignments a USING (review_id) WHERE r.content LIKE ? ESCAPE '\\'"
     total = con.execute(f"SELECT COUNT(*) {where}", (like,)).fetchone()[0]
     results = []
-    for s, at, u, t, status, c in con.execute(
-            f"SELECT r.score, r.at, r.thumbs_up, r.content, a.status, a.cluster {where} "
+    for rid, s, at, u, t, status, c in con.execute(
+            f"SELECT r.review_id, r.score, r.at, r.thumbs_up, r.content, a.status, a.cluster {where} "
             f"ORDER BY r.thumbs_up DESC, r.at DESC LIMIT ?", (like, C.SEARCH_MAX_RESULTS)):
         if status == "clustered":
             where_now = f"{tname[clusters[c]['theme']]} · sub-theme {clusters[c]['id']}"
@@ -130,7 +130,8 @@ def search(con, q):
             where_now = "v1 noise (never clustered)"
         else:
             where_now = "Not clustered (under 5 words or duplicate text)"
-        results.append({"stars": s, "date": at[:10], "helpful": u or 0, "text": t, "where": where_now})
+        results.append({"id": rid, "stars": s, "date": at[:10], "helpful": u or 0, "text": t,
+                        "where": where_now, "linkable": status in ("clustered", "unassigned")})
     return {"q": q, "results": results, "total": total, "too_short": False}
 
 
@@ -226,7 +227,7 @@ def whatif(con, t, td=None):
         c, d = vec(r["review_id"])
         right = r["verdict"].strip().lower() == "right"
         pb, ps = d < base_t, d < limit(c, t, td)
-        labels.append({"source": "threshold", "verdict": r["verdict"].strip().lower(), "text": r["text"],
+        labels.append({"source": "threshold", "id": r["review_id"], "verdict": r["verdict"].strip().lower(), "text": r["text"],
                        "cluster": disp[c], "theme": themes[theme_of[c]]["name"], "distance": d,
                        "base": outcome_threshold(right, pb), "set": outcome_threshold(right, ps)})
     for src in C.PURITY_LABEL_SOURCES:
@@ -236,7 +237,7 @@ def whatif(con, t, td=None):
                 continue
             c, d = vec(r["review_id"])
             yes, into = v == "yes", theme_of[c] == src["yes_theme"]
-            labels.append({"source": f"cluster {src['cluster']} purity", "verdict": v, "text": r["text"],
+            labels.append({"source": f"cluster {src['cluster']} purity", "id": r["review_id"], "verdict": v, "text": r["text"],
                            "cluster": disp[c], "theme": themes[theme_of[c]]["name"], "distance": d,
                            "base": outcome_purity(yes, d < base_t, into),
                            "set": outcome_purity(yes, d < limit(c, t, td), into)})
@@ -274,3 +275,95 @@ def whatif(con, t, td=None):
             "n_threshold": sum(x["source"] == "threshold" for x in labels),
             "n_purity": sum(x["source"] != "threshold" for x in labels),
             "purity_sources": C.PURITY_LABEL_SOURCES}
+
+
+
+def run_status(con):
+    """Runs still marked 'running'. 'live' started within RUN_STALE_HOURS and may really be going,
+    so the app holds off writing; 'stale' are older - stopped without recording - and only warned about."""
+    from datetime import datetime, timedelta
+    cutoff = (datetime.now() - timedelta(hours=C.RUN_STALE_HOURS)).isoformat()
+    out = {"live": [], "stale": []}
+    for table, kind in (("ingest_runs", "ingest"), ("assign_runs", "assign")):
+        for run_id, started in con.execute(f"SELECT run_id, started_at FROM {table} WHERE status = 'running'"):
+            out["live" if started >= cutoff else "stale"].append(
+                {"kind": kind, "id": run_id, "started": started[:16].replace("T", " ")})
+    return out
+
+
+def review_detail(con, review_id):
+    """One review: its text, where it sits now, every decision logged for it, and its flag."""
+    themes, clusters = _taxonomy(con)
+    tname = {k: t["name"] for k, t in themes.items()}
+    r = con.execute("SELECT content, score, at, thumbs_up FROM reviews_raw WHERE review_id = ?",
+                    (review_id,)).fetchone()
+    if not r:
+        return None
+
+    def label(c):
+        return f"{clusters[c]['id']} · {tname[clusters[c]['theme']]}" if c in clusters else f"internal {c}"
+
+    out = {"id": review_id, "text": r[0], "stars": r[1], "date": r[2][:10], "helpful": r[3] or 0,
+           "placement": None, "current": None, "history": [], "flag": None, "options": [], "why_not": None}
+    a = con.execute("""SELECT status, cluster, distance, nearest_cluster, nearest_distance, second_cluster,
+                              second_distance, source, run_id FROM assignments WHERE review_id = ?""",
+                    (review_id,)).fetchone()
+    if a is None:
+        out["why_not"] = "Never clustered: under 5 words or duplicate text, so there is no placement to flag."
+        return out
+    status, c, dist, n1, d1, n2, d2, source, run_id = a
+    where = (label(c) if status == "clustered" else
+             "Unassigned bucket" if status == "unassigned" else "v1 noise (never clustered)")
+    out["placement"] = {"status": status, "source": source, "run": run_id, "where": where, "distance": dist,
+                        "nearest": label(n1) if n1 is not None else None, "nearest_d": d1,
+                        "second": label(n2) if n2 is not None else None, "second_d": d2}
+    reset = _since_reset(con)
+    for log_id, rid, logged, event, outcome, lc, ld, ln1d, thr, metric in con.execute(
+            """SELECT log_id, run_id, logged_at, event, outcome, cluster, distance, nearest_distance,
+                      threshold, metric FROM assignment_log WHERE review_id = ? ORDER BY log_id DESC""",
+            (review_id,)):
+        out["history"].append({"log_id": log_id, "run": rid, "when": logged[:16].replace("T", " "),
+                               "event": event, "outcome": outcome,
+                               "where": label(lc) if outcome == "assigned" else "bucket",
+                               "distance": ld if ld is not None else ln1d, "threshold": thr, "metric": metric,
+                               "superseded": rid < reset or rid != run_id})
+    if source == "initial":
+        out["why_not"] = ("Placed by v1's original clustering, not by a daily decision, so there is no decision "
+                          "to flag. Flags apply to daily placements only.")
+        return out
+    cur = next((h for h in out["history"] if h["run"] == run_id), None)
+    out["current"] = cur
+    if cur:
+        f = con.execute("SELECT flagged_at, correct_cluster, note FROM assignment_flags WHERE log_id = ?",
+                        (cur["log_id"],)).fetchone()
+        if f:
+            cc = f[1]
+            out["flag"] = {"when": f[0][:16].replace("T", " "), "note": f[2],
+                           "correct": None if cc is None else "Unassigned bucket" if cc == "bucket" else label(int(cc))}
+    out["options"] = [{"value": c2, "label": f"{v['id']} · {tname[v['theme']]}"
+                                             + (f" - {v['name']}" if v["name"] != tname[v["theme"]] else "")}
+                      for c2, v in sorted(clusters.items(), key=lambda kv: kv[1]["id"])]
+    return out
+
+
+def flags(con):
+    """Every flag, newest first, with the review and the decision it marks wrong."""
+    themes, clusters = _taxonomy(con)
+    tname = {k: t["name"] for k, t in themes.items()}
+
+    def label(c):
+        return f"{clusters[c]['id']} · {tname[clusters[c]['theme']]}" if c in clusters else f"internal {c}"
+
+    reset = _since_reset(con)
+    rows = []
+    for log_id, rid, when, cc, note, run, outcome, lc, ld, ln1d, text, stars in con.execute(
+            """SELECT f.log_id, f.review_id, f.flagged_at, f.correct_cluster, f.note, l.run_id, l.outcome,
+                      l.cluster, l.distance, l.nearest_distance, r.content, r.score
+               FROM assignment_flags f JOIN assignment_log l USING (log_id)
+               JOIN reviews_raw r ON r.review_id = f.review_id ORDER BY f.flagged_at DESC"""):
+        rows.append({"log_id": log_id, "id": rid, "when": when[:16].replace("T", " "), "note": note,
+                     "was": label(lc) if outcome == "assigned" else "Unassigned bucket",
+                     "distance": ld if ld is not None else ln1d,
+                     "correct": None if cc is None else "Unassigned bucket" if cc == "bucket" else label(int(cc)),
+                     "text": text, "stars": stars, "old": run < reset})
+    return rows

@@ -36,7 +36,7 @@ different questions, so they're counted separately.</p>
 <thead><tr><th>Label</th><th>Your verdict</th><th>Nearest v1 cluster</th><th class="n">Distance</th><th>At {{ w.base_t }}</th><th>This setting</th><th>Review</th></tr></thead>
 <tbody>{% for x in w.labels %}<tr{% if x.base != x.set %} style="background:var(--accent-soft)"{% endif %}>
 <td>{{ x.source }}</td><td>{{ x.verdict }}</td><td>{{ x.cluster }} · {{ x.theme }}</td><td class="n">{{ '%.2f' % x.distance }}</td>
-<td>{{ x.base }}</td><td><b>{{ x.set }}</b></td><td style="min-width:260px">{{ x.text[:160] }}{% if x.text|length > 160 %}…{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+<td>{{ x.base }}</td><td><b>{{ x.set }}</b></td><td style="min-width:260px">{{ x.text[:160] }}{% if x.text|length > 160 %}…{% endif %} <a href="/review/{{ x.id }}" style="color:var(--accent)">details</a></td></tr>{% endfor %}</tbody></table></div>
 <p class="h2note">Highlighted rows change between the two settings.</p>
 
 <h2>Per theme: reviews placed since v1</h2>

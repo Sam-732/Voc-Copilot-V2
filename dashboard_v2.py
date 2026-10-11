@@ -37,9 +37,11 @@ def bins_for(first, last):
     return out[::-1]
 
 
-def build_payload(con):
+def build_payload(con, with_ids=False):
     """Everything the page shows, read from reviews.db. Only SELECTs.
     Used by main() for the static file and by app.py for the live page.
+    with_ids: include each review's id, so the app can link to its detail page. The static
+    file leaves them out, so its data stays as before.
     Returns (payload, previous run id)."""
     run_id = con.execute("SELECT MAX(run_id) FROM theme_rank_snapshots").fetchone()[0]
     if run_id is None:
@@ -70,7 +72,8 @@ def build_payload(con):
     by_cluster = collections.defaultdict(list)
     for status, cid, source, rid, text, score, at, thumbs in rows:
         key = cid if status == "clustered" else "bucket"
-        by_cluster[key].append({"t": text or "", "s": score, "d": at[:10], "u": thumbs or 0,
+        by_cluster[key].append({**({"id": rid} if with_ids else {}),
+                                "t": text or "", "s": score, "d": at[:10], "u": thumbs or 0,
                                 "n": source != "initial",
                                 "c": clusters[cid]["id"] if status == "clustered" else None})
 
@@ -398,7 +401,8 @@ function reviewsHtml(revs, from, to){
     <div class="rmeta"><span class="stars" aria-label="${r.s} stars">${'★'.repeat(r.s)}<span class="nostar">${'★'.repeat(5-r.s)}</span> ${r.s}★</span>
     <span>${r.d}</span>${r.u ? `<span class="votes">${fmt(r.u)} found helpful</span>` : ''}
     ${r.c != null ? `<span>sub-theme ${r.c}</span>` : ''}
-    ${r.n ? '<span class="newtag">placed daily</span>' : ''}</div>${esc(r.t)}</div>`).join('');
+    ${r.n ? '<span class="newtag">placed daily</span>' : ''}
+    ${r.id ? `<a href="/review/${encodeURIComponent(r.id)}" style="color:var(--accent)">${r.n ? 'details · flag' : 'details'}</a>` : ''}</div>${esc(r.t)}</div>`).join('');
 }
 
 function subsTable(t){

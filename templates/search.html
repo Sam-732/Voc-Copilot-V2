@@ -8,7 +8,7 @@
 {% if s.too_short %}<p class="empty">Type at least {{ min_chars }} characters.</p>
 {% elif s.q %}<p class="hits">{{ s.total }} review{{ '' if s.total == 1 else 's' }} contain "{{ s.q }}"{% if s.total > s.results|length %} — showing the {{ s.results|length }} most helpful{% endif %}.</p>
 {% for r in s.results %}<div class="rev{% if r.helpful >= 5 %} up{% endif %}">
-  <div class="rmeta">{{ stars(r.stars) }}<span>{{ r.date }}</span>{% if r.helpful %}<span class="votes">{{ r.helpful }} found helpful</span>{% endif %}<span>{{ r.where }}</span></div>
+  <div class="rmeta">{{ stars(r.stars) }}<span>{{ r.date }}</span>{% if r.helpful %}<span class="votes">{{ r.helpful }} found helpful</span>{% endif %}<span>{{ r.where }}</span>{% if r.linkable %}<a href="/review/{{ r.id }}" style="color:var(--accent)">details · flag</a>{% endif %}</div>
   {{ r.text|highlight(s.q) }}</div>{% else %}<p class="empty">No review contains that.</p>{% endfor %}
 {% endif %}
 {% endblock %}

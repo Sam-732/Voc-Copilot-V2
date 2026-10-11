@@ -7,8 +7,8 @@
 .appnav .live{margin-left:auto;color:var(--faint);text-transform:none;letter-spacing:0}
 </style>
 <nav class="appnav" aria-label="Pages">
-  {% for href, label in [("/", "Themes"), ("/trends", "Trends"), ("/bucket", "Bucket"), ("/search", "Search"), ("/runs", "Runs"), ("/whatif", "What if")] %}
+  {% for href, label in [("/", "Themes"), ("/trends", "Trends"), ("/bucket", "Bucket"), ("/search", "Search"), ("/runs", "Runs"), ("/whatif", "What if"), ("/flags", "Flags")] %}
   <a href="{{ href }}"{% if href == active %} aria-current="page"{% endif %}>{{ label }}</a>
   {% endfor %}
-  <span class="live">live from reviews.db · read-only</span>
+  <span class="live">live from reviews.db · writes: flags only</span>
 </nav>

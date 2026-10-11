@@ -25,6 +25,7 @@ The first column in the terminal output is LOG_ID - that's what `flag` takes.
 import argparse, collections, csv, json, os, sqlite3, sys
 from datetime import datetime
 
+import actions
 import config as C
 import space as S
 import taxonomy
@@ -94,25 +95,18 @@ def cmd_ranked(con, args, order, title):
 
 
 def cmd_flag(con, args):
-    row = con.execute("SELECT review_id, outcome, cluster FROM assignment_log WHERE log_id=?",
-                      (args.log_id,)).fetchone()
-    if not row:
-        sys.exit(f"no log row {args.log_id}")
-    if args.correct not in (None, "bucket"):
-        if not con.execute("SELECT 1 FROM centroids WHERE cluster=?", (int(args.correct),)).fetchone():
-            sys.exit(f"cluster {args.correct} does not exist")
-    with con:
-        con.execute("INSERT OR REPLACE INTO assignment_flags VALUES (?,?,?,?,?,?)",
-                    (args.log_id, row[0], datetime.now().isoformat(), "wrong", args.correct, args.note))
-    got = f"cluster {row[2]}" if row[1] == "assigned" else "bucket"
+    try:
+        row = actions.flag_assignment(con, args.log_id, args.correct, args.note)
+    except actions.FlagError as e:
+        sys.exit(str(e))
+    got = f"cluster {row['cluster']}" if row["outcome"] == "assigned" else "bucket"
     print(f"flagged log {args.log_id} as wrong (was {got}"
           f"{', should be ' + args.correct if args.correct else ''})")
 
 
 def cmd_unflag(con, args):
-    with con:
-        n = con.execute("DELETE FROM assignment_flags WHERE log_id=?", (args.log_id,)).rowcount
-    print(f"removed flag on log {args.log_id}" if n else f"log {args.log_id} was not flagged")
+    gone = actions.unflag_assignment(con, args.log_id)
+    print(f"removed flag on log {args.log_id}" if gone else f"log {args.log_id} was not flagged")
 
 
 def cmd_flags(con, args):

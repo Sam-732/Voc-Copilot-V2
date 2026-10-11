@@ -251,3 +251,6 @@ Changed by hand: run 77's status set to 'failed' with that explanation, so it do
 run in progress. Fixes: interrupted runs are now recorded as failed, the next run marks stale
 'running' rows as failed (runstate.py), and the task now starts without a window
 (run_daily_hidden.pyw). The 296 reviews were assigned in a manual catch-up run the same evening.
+
+### 10. Flagging: what can and cannot be flagged (step 4, 1 Oct 2026)
+v1's original 4,126 reviews can't be flagged: a flag attaches to one daily placement decision (an assignment_log row), and v1's members were placed by v1's own clustering, so they have no decision to flag. Reviews never clustered (under 5 words or duplicate text) can't be flagged either. Flags are written only through actions.py, by both the app and `assignlog.py flag`, into assignment_flags, which resets never clear.

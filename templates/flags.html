@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% from "_macros.html" import stars %}
+{% block body %}
+{% if msg %}<div class="caveat" role="status" style="border-left-color:{{ 'var(--flag)' if msg_bad else 'var(--accent)' }}">{{ msg }}</div>{% endif %}
+<p class="h2note">{{ rows|length }} flag{{ '' if rows|length == 1 else 's' }}. Flags are stored in the assignment_flags table
+and are never removed by a reset. Flags on decisions from runs before the latest reset are greyed: that decision was
+redone, so the flag describes an old placement. The command line shows the same list: <code>python assignlog.py flags</code>.</p>
+{% for f in rows %}<div class="rev" style="{{ 'opacity:.6' if f.old else '' }}">
+  <div class="rmeta">{{ stars(f.stars) }}<span>flagged {{ f.when }}</span><span>was: {{ f.was }}{% if f.distance is not none %} ({{ '%.3f' % f.distance }}){% endif %}</span>
+    <span>should be: {{ f.correct or "not given" }}</span>{% if f.old %}<span class="pill">old run</span>{% endif %}
+    <a href="/review/{{ f.id }}" style="color:var(--accent)">details</a></div>
+  {{ f.text[:300] }}{% if f.text|length > 300 %}…{% endif %}
+  {% if f.note %}<div class="rmeta" style="margin-top:4px">note: {{ f.note }}</div>{% endif %}
+  <form method="post" action="/review/{{ f.id }}/unflag" style="margin-top:6px">
+    <input type="hidden" name="log_id" value="{{ f.log_id }}"><input type="hidden" name="next" value="flags">
+    <button class="more" type="submit" {% if live %}disabled{% endif %}>Remove flag</button></form>
+</div>{% else %}<p class="empty">No flags yet. Open any daily-placed review ("details · flag") to mark it wrong.</p>{% endfor %}
+{% endblock %}

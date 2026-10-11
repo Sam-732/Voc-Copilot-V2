@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_macros.html" import stars %}
+{% block body %}
+{% if msg %}<div class="caveat" role="status" style="border-left-color:{{ 'var(--flag)' if msg_bad else 'var(--accent)' }}">{{ msg }}</div>{% endif %}
+{% if runs.live %}<div class="caveat" role="status"><b>A run is in progress</b>
+({% for r in runs.live %}{{ r.kind }} run {{ r.id }} since {{ r.started }}{% if not loop.last %}, {% endif %}{% endfor %}).
+Flagging is paused until it finishes, so the app doesn't write while the daily job does. Reload in a minute.</div>{% endif %}
+{% if runs.stale %}<div class="caveat" role="note">Note: {% for r in runs.stale %}{{ r.kind }} run {{ r.id }} (started {{ r.started }}){% if not loop.last %}, {% endif %}{% endfor %}
+still says "running" but is older than {{ stale_hours }} hours, so it was stopped without recording. The next daily run marks it failed.
+It doesn't block flagging.</div>{% endif %}
+
+<div class="rev" style="font-size:15px">
+  <div class="rmeta">{{ stars(d.stars) }}<span>{{ d.date }}</span>{% if d.helpful %}<span class="votes">{{ d.helpful }} found helpful</span>{% endif %}</div>
+  {{ d.text }}</div>
+
+<h2>Where it sits now</h2>
+{% if d.placement %}{% set p = d.placement %}
+<table class="grid"><tbody>
+<tr><td class="name">Placed in</td><td><b>{{ p.where }}</b>{% if p.status == "clustered" and p.distance is not none %} — distance {{ '%.3f' % p.distance }}{% endif %}</td></tr>
+<tr><td class="name">Placed by</td><td>{{ {"initial": "v1's original clustering", "incremental": "daily placement", "bucket_recluster": "re-clustering the bucket"}[p.source] }}{% if p.run %}, run {{ p.run }}{% endif %}</td></tr>
+{% if p.nearest %}<tr><td class="name">Nearest cluster</td><td>{{ p.nearest }} — {{ '%.3f' % p.nearest_d }}</td></tr>{% endif %}
+{% if p.second %}<tr><td class="name">Second nearest</td><td>{{ p.second }} — {{ '%.3f' % p.second_d }}</td></tr>{% endif %}
+</tbody></table>
+{% endif %}
+
+<h2>Mark this placement wrong</h2>
+{% if d.why_not %}<p class="h2note">{{ d.why_not }}</p>
+{% elif not d.current %}<p class="h2note">No current decision was found for this review, so there is nothing to flag.</p>
+{% else %}
+  {% if d.flag %}<div class="card"><b>Flagged as wrong</b> on {{ d.flag.when }}.
+    {% if d.flag.correct %}Should be: <b>{{ d.flag.correct }}</b>.{% else %}Right place not given.{% endif %}
+    {% if d.flag.note %}<br>Note: {{ d.flag.note }}{% endif %}
+    <form method="post" action="/review/{{ d.id }}/unflag" style="margin-top:8px">
+      <input type="hidden" name="log_id" value="{{ d.current.log_id }}">
+      <button class="more" type="submit" {% if runs.live %}disabled{% endif %}>Remove flag</button></form></div>
+  {% endif %}
+  <form method="post" action="/review/{{ d.id }}/flag" class="card">
+    <input type="hidden" name="log_id" value="{{ d.current.log_id }}">
+    <p class="h2note" style="margin:0 0 8px">Flags decision {{ d.current.log_id }} (run {{ d.current.run }}: {{ d.current.where }}) as wrong.
+      {% if d.flag %}Saving again replaces the flag above.{% endif %}</p>
+    <label style="display:block;font-size:13px;color:var(--muted)">Where should it have gone? (optional)
+      <select name="correct" style="display:block;width:100%;margin-top:4px;padding:7px;font:inherit;font-size:13px;background:var(--surface);color:var(--ink);border:1px solid var(--rule);border-radius:3px">
+        <option value="">Don't know</option>
+        {% if d.current.outcome == "assigned" %}<option value="bucket">Unassigned bucket (fits no cluster)</option>{% endif %}
+        {% for o in d.options %}<option value="{{ o.value }}">{{ o.label }}</option>{% endfor %}
+      </select></label>
+    <label style="display:block;font-size:13px;color:var(--muted);margin-top:10px">Note (optional, up to {{ note_max }} characters)
+      <textarea name="note" maxlength="{{ note_max }}" rows="2" style="display:block;width:100%;margin-top:4px;padding:7px;font:inherit;font-size:13px;background:var(--surface);color:var(--ink);border:1px solid var(--rule);border-radius:3px"></textarea></label>
+    <button class="more" type="submit" style="margin-top:10px" {% if runs.live %}disabled{% endif %}>Mark wrong</button>
+  </form>
+{% endif %}
+
+{% if d.history %}<h2>Every decision logged for this review</h2>
+<p class="h2note">Newest first. Greyed rows are from earlier runs that were later redone (resets) and no longer count.</p>
+<div class="scroll"><table class="grid">
+<thead><tr><th class="n">Decision</th><th class="n">Run</th><th>When</th><th>How</th><th>Placed in</th><th class="n">Distance</th><th class="n">Threshold</th></tr></thead>
+<tbody>{% for h in d.history %}<tr class="{{ 'old' if h.superseded else '' }}"><td class="n">{{ h.log_id }}</td><td class="n">{{ h.run }}</td><td>{{ h.when }}</td>
+<td>{{ h.event|replace("_", " ") }}</td><td>{{ h.where }}</td><td class="n">{{ '%.3f' % h.distance if h.distance is not none else "—" }}</td>
+<td class="n">{{ h.threshold }} {{ h.metric or "" }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+{% endblock %}

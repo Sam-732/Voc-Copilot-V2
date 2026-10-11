@@ -1,4 +1,4 @@
 {% macro stars(n) %}<span class="stars" aria-label="{{ n }} stars">{{ '★' * n }}<span class="nostar">{{ '★' * (5 - n) }}</span> {{ n }}★</span>{% endmacro %}
 {% macro review(r, extra="") %}<div class="rev{% if r.helpful >= 5 %} up{% endif %}">
-  <div class="rmeta">{{ stars(r.stars) }}<span>{{ r.date }}</span>{% if r.helpful %}<span class="votes">{{ r.helpful }} found helpful</span>{% endif %}{% if extra %}<span>{{ extra }}</span>{% endif %}</div>
+  <div class="rmeta">{{ stars(r.stars) }}<span>{{ r.date }}</span>{% if r.helpful %}<span class="votes">{{ r.helpful }} found helpful</span>{% endif %}{% if extra %}<span>{{ extra }}</span>{% endif %}{% if r.id %}<a href="/review/{{ r.id }}" style="color:var(--accent)">details · flag</a>{% endif %}</div>
   {{ r.text }}</div>{% endmacro %}
