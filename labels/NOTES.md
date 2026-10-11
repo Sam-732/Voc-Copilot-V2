@@ -262,3 +262,19 @@ run in progress. Fixes: interrupted runs are now recorded as failed, the next ru
 
 ### 10. Flagging: what can and cannot be flagged (step 4, 1 Oct 2026)
 v1's original 4,126 reviews can't be flagged: a flag attaches to one daily placement decision (an assignment_log row), and v1's members were placed by v1's own clustering, so they have no decision to flag. Reviews never clustered (under 5 words or duplicate text) can't be flagged either. Flags are written only through actions.py, by both the app and `assignlog.py flag`, into assignment_flags, which resets never clear.
+
+### 11. Reading the assign log
+The "total" column that assign.py prints for each cluster (also in logs/assign.log) is the cluster's size when its centroid was frozen (centroids.n_members), not its current size. With FREEZE_CENTROIDS = True it never updates. Current sizes are on the dashboard and in rank_snapshots.
+
+### 12. Phase 4: the local web app (steps 1-6, 30 Sep - 11 Oct 2026)
+Flask app (app.py) on 127.0.0.1:5000, built in six reviewed steps. Pages: Themes, Trends, Bucket,
+Search, Runs, What if, Flags, Label. Read-only except two writes: flags go to assignment_flags in
+reviews.db (via actions.py), labels go to labels/threshold_labels.csv only (via labelstore.py,
+option A). The command-line tools use the same two modules, so each write happens one way.
+reviews.db is in WAL mode so pages can read while the daily job writes. Writes only accept forms
+from the app's own pages; flag writes pause while a daily run started in the last RUN_STALE_HOURS
+is still running. What if previews placement against the 30 v1 clusters and never writes.
+Runs page: an ingest run that fetched nothing is shown as "anomaly: no reviews", not as success.
+
+### 13. Scheduled task: "start only if network available" considered and skipped (Samprat, 11 Oct 2026)
+Skipped, task left as it is: the zero-review days (3, 5, 7, 9 Oct) look like the laptop sleeping mid-run (per the logs: late starts, retries hours apart), which a start-time network check does not cover, and missed days are already caught up by the next run and shown as anomalies on the Runs page.

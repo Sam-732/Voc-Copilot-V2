@@ -80,6 +80,15 @@ python ingest.py      # ~3 min, writes reviews.db
 python clean.py
 python cluster.py     # ~5 min, downloads a 450 MB model on first run
 python dashboard.py   # writes dashboard.html
+
+v2: daily pipeline and local app
+
+The daily job (run_daily.bat, run by Task Scheduler at 21:00) fetches new reviews, places each one into the nearest existing cluster or the unassigned bucket (euclidean distance under 0.58), re-ranks the themes and rebuilds dashboard_v2.html. One-time setup before the first run: python bootstrap_v2.py (refits v1's UMAP, ~3 min). Decisions and findings are in labels/NOTES.md.
+
+The local app shows the same data live and lets you record judgements:
+python app.py         # then open http://127.0.0.1:5000/ ; stop with Ctrl+C
+Pages: Themes (ranked complaint themes), Trends, Bucket, Search, Runs, What if (threshold preview, saves nothing), Flags, Label.
+It only listens on 127.0.0.1, and only accepts forms from its own pages. It writes two things: flags (marking a placement wrong) go to the assignment_flags table in reviews.db, and labels go to labels/threshold_labels.csv only. Everything else is read-only. Flag saves pause while a daily run is in progress.
 Data
 
 reviews.db holds review IDs, text, ratings, dates and helpful-vote counts. No usernames are stored — the scraper collects them, the schema does not keep them. All reviews are already public on the Play Store.

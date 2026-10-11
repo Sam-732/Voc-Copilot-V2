@@ -4,8 +4,9 @@
 <div class="scroll"><table class="grid">
 <thead><tr><th>#</th><th>Started</th><th>Status</th><th>From (newest stored)</th><th class="n">Fetched</th><th class="n">New raw</th><th class="n">New clean</th><th class="n">Per day</th><th>Notes</th></tr></thead>
 <tbody>{% for x in r.ingest %}<tr><td class="n">{{ x.id }}</td><td>{{ x.started[:16]|replace("T", " ") }}</td>
-<td>{% if x.status == "success" %}<span class="pill">success</span>{% elif x.status == "failed" %}<span class="pill bad">failed</span>{% else %}<span class="pill warn">{{ x.status }}</span>{% endif %}
-{% if x.anomalous %} <span class="pill warn">anomalous</span>{% endif %}</td>
+<td>{% if x.status == "success" and x.anomalous and x.fetched == 0 %}<span class="pill warn">anomaly: no reviews</span>
+{% elif x.status == "success" %}<span class="pill">success</span>{% if x.anomalous %} <span class="pill warn">anomalous</span>{% endif %}
+{% elif x.status == "failed" %}<span class="pill bad">failed</span>{% else %}<span class="pill warn">{{ x.status }}</span>{% endif %}</td>
 <td>{{ (x.since or "")[:16]|replace("T", " ") }}</td><td class="n">{{ x.fetched if x.fetched is not none else "—" }}</td>
 <td class="n">{{ x.inserted if x.inserted is not none else "—" }}</td><td class="n">{{ x.clean_inserted if x.clean_inserted is not none else "—" }}</td>
 <td class="n">{{ '%.0f' % x.per_day if x.per_day is not none else "—" }}</td><td>{{ x.anomaly or x.error or "" }}</td></tr>
